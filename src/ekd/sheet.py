@@ -360,6 +360,48 @@ _WIDTH = re.compile(r'width="[^"]*"')
 _HEIGHT = re.compile(r'height="[^"]*"')
 
 
+def save_document(
+    sheets: Sequence[Sheet],
+    *,
+    svg: Sequence[Path | str] | None = None,
+    pdf: Path | str | None = None,
+) -> tuple[Path, ...]:
+    """Документ из нескольких листов: SVG на каждый лист и один PDF со всеми листами.
+
+    Оба формата получают одно и то же разложение примитивов, поэтому страница PDF с
+    номером *i* — тот же лист, что и файл ``svg[i]``. SVG многостраничным не бывает,
+    поэтому лист документа — это один файл SVG и одна страница PDF.
+    """
+    sheets = list(sheets)
+    if svg is None and pdf is None:
+        raise ValueError("укажите хотя бы один из путей: svg= или pdf=")
+    if not sheets:
+        raise ValueError("в документе нет ни одного листа")
+    paths = [] if svg is None else [Path(path) for path in svg]
+    if svg is not None and len(paths) != len(sheets):
+        raise ValueError(f"листов {len(sheets)}, а путей SVG — {len(paths)}")
+
+    written: list[Path] = []
+    for sheet, path in zip(sheets, paths):
+        written.extend(sheet.save(svg=path))
+    if pdf is not None:
+        from matplotlib.backends.backend_pdf import PdfPages
+        import matplotlib.pyplot as plt
+
+        path = Path(pdf)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # CreationDate=None: файл не меняется от запуска к запуску.
+        with PdfPages(path, metadata={"CreationDate": None}) as pages:
+            for sheet in sheets:
+                figure = sheet._figure()
+                try:
+                    pages.savefig(figure)
+                finally:
+                    plt.close(figure)
+        written.append(path)
+    return tuple(written)
+
+
 def _svg_in_millimetres(path: Path, width: float, height: float) -> None:
     """Проставить в SVG физический размер листа в миллиметрах.
 

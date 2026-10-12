@@ -9,9 +9,10 @@ PDF и несёт ISO-штамп; документы этапов курсово
   дополнительные графы и один источник для SVG и PDF;
 - :mod:`ekd.projection` — виды изделия: HLR-проекция модели и перевод точек модели
   в миллиметры листа;
-- :mod:`ekd.symbols` — условные обозначения опор по ГОСТ 3.1107-81.
+- :mod:`ekd.symbols` — условные обозначения опор по ГОСТ 3.1107-81;
+- :mod:`ekd.estd` — формы ЕСТД: бланк операционной карты (ГОСТ 3.1407-86) и его заполнение.
 """
 
-from ekd import primitives, projection, sheet, symbols
+from ekd import estd, primitives, projection, sheet, symbols
 
-__all__ = ["primitives", "projection", "sheet", "symbols"]
+__all__ = ["estd", "primitives", "projection", "sheet", "symbols"]
