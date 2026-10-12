@@ -151,6 +151,41 @@ def test_pdf_carries_selectable_text(tmp_path):
     assert "Схема базирования" in _pdf_page(pdf).get_text()
 
 
+# --- залитые многоугольники и штрихпунктирные линии ---------------------------
+
+
+def test_filled_polygons_and_dashes_reach_both_files(tmp_path):
+    """Стрелки размеров и осевые линии одинаково попадают в SVG и PDF."""
+    from ekd.dimensions import ARROW_LENGTH, ARROW_WIDTH, horizontal
+    from ekd.primitives import CenterLine
+
+    sheet = ekd.Sheet("A3")
+    sheet.add_frame()
+    horizontal(sheet, (40.0, 100.0), (160.0, 100.0), at=80.0, label="124 +0,2")
+    sheet.add(CenterLine(200.0, 40.0, 200.0, 250.0))
+    svg, pdf = sheet.save(svg=tmp_path / "s.svg", pdf=tmp_path / "s.pdf")
+
+    assert "stroke-dasharray" in svg.read_text(encoding="utf-8"), "осевая линия — штрихпунктир"
+    page = _pdf_page(pdf)
+    arrows = [item["rect"] for item in page.get_drawings()
+              if item.get("fill") and item["rect"].width < 20 and item["rect"].height < 20]
+    assert len(arrows) == 2, "две зачернённые стрелки"
+    for rect in arrows:
+        assert rect.width * MM_PER_PT == pytest.approx(ARROW_LENGTH, abs=0.1)
+        assert rect.height * MM_PER_PT == pytest.approx(ARROW_WIDTH, abs=0.1)
+
+
+def test_filled_polygon_primitive_is_drawn_but_keeps_its_shape():
+    from ekd.primitives import FilledPolygon
+
+    sheet = ekd.Sheet("A3")
+    sheet.add(FilledPolygon(((10.0, 10.0), (20.0, 10.0), (15.0, 20.0))))
+    segments, circles, polygons, labels = sheet.geometry()
+    assert segments == [] and circles == [] and labels == []
+    assert polygons == [((10.0, 10.0), (20.0, 10.0), (15.0, 20.0))]
+    assert sheet.bounds() == (10.0, 10.0, 20.0, 20.0), "габарит учитывает залитый многоугольник"
+
+
 # --- помощники проверки -------------------------------------------------------
 
 

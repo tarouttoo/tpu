@@ -39,15 +39,21 @@ _ANCHOR_SHIFT = {"start": 0.0, "middle": 0.5, "end": 1.0}
 VALIGN_VA = {"baseline": "baseline", "bottom": "bottom", "center": "center", "top": "top"}
 
 
+#: Штрихпунктирная тонкая линия (ГОСТ 2.303, осевые и центровые линии): штрих 5 мм,
+#: промежуток 2 мм, точка. Шаблон задаётся в толщинах линии — так его понимает вывод.
+DASH_CENTRE = (20.0, 8.0, 0.4, 8.0)
+
+
 @dataclass(frozen=True)
 class Segment:
-    """Отрезок листа."""
+    """Отрезок листа. ``dash`` — шаблон штрихов в толщинах линии (пусто — сплошная)."""
 
     x1: float
     y1: float
     x2: float
     y2: float
     width: float = THIN
+    dash: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,10 @@ class Primitive:
         return ()
 
     def circles(self) -> tuple[CircleMark, ...]:
+        return ()
+
+    def polygons(self) -> tuple[tuple[tuple[float, float], ...], ...]:
+        """Залитые многоугольники: стрелки размеров, зачернённые части знаков."""
         return ()
 
     def labels(self) -> tuple["Text", ...]:
@@ -121,6 +131,41 @@ class Circle(Primitive):
 def dot(x: float, y: float, diameter: float = 1.4) -> Circle:
     """Залитая точка: центр знака ⌀6, конец линии-выноски."""
     return Circle(x, y, diameter, THIN, filled=True)
+
+
+@dataclass(frozen=True)
+class FilledPolygon(Primitive):
+    """Залитый многоугольник: стрелка линейного размера и другие зачернённые части."""
+
+    points: tuple[tuple[float, float], ...]
+    kind: ClassVar[str] = "залитый многоугольник"
+
+    def polygons(self) -> tuple[tuple[tuple[float, float], ...], ...]:
+        return (self.points,)
+
+
+@dataclass(frozen=True)
+class CenterLine(Primitive):
+    """Осевая (центровая) линия — штрихпунктирная тонкая по ГОСТ 2.303.
+
+    Осями симметрии на схеме проставляют координаты от центра изделия: без видимой
+    осевой линии размер от неё читается как размер от воздуха.
+    """
+
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    width: float = THIN
+    kind: ClassVar[str] = "осевая линия"
+
+    def segments(self) -> tuple[Segment, ...]:
+        return (Segment(self.x1, self.y1, self.x2, self.y2, self.width, DASH_CENTRE),)
+
+
+def centre_line(sheet, x1: float, y1: float, x2: float, y2: float) -> CenterLine:
+    """Провести осевую линию (штрихпунктирную)."""
+    return sheet.add(CenterLine(x1, y1, x2, y2))
 
 
 @dataclass(frozen=True)

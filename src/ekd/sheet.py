@@ -18,6 +18,7 @@ from typing import Iterable, Sequence
 
 from ekd.primitives import (
     ANCHOR_HA,
+    DASH_CENTRE,
     FONT,
     FONT_STYLE,
     TEXT_2_5,
@@ -28,13 +29,16 @@ from ekd.primitives import (
     THICK,
     THIN,
     VALIGN_VA,
+    CenterLine,
     Circle,
     CircleMark,
+    FilledPolygon,
     Line,
     Polyline,
     Primitive,
     Segment,
     Text,
+    centre_line,
     dot,
     fit_height,
     font_size_mm,
@@ -46,8 +50,9 @@ __all__ = [
     "SHEET_SIZES", "MARGIN_LEFT", "MARGIN", "TITLE_W", "TITLE_H", "MM_PER_PT", "Sheet",
     # примитивы и метрики — через этот модуль: лист их и держит
     "ANCHOR_HA", "VALIGN_VA", "FONT", "FONT_STYLE", "THICK", "THIN", "TEXT_2_5", "TEXT_3_5",
-    "TEXT_5", "TEXT_7", "TEXT_SIZES", "Circle", "CircleMark", "Line", "Polyline", "Primitive",
-    "Segment", "Text", "dot", "fit_height", "font_size_mm", "text_box", "text_extent",
+    "TEXT_5", "TEXT_7", "TEXT_SIZES", "Circle", "CircleMark", "CenterLine", "DASH_CENTRE",
+    "FilledPolygon", "Line", "Polyline", "Primitive", "Segment", "Text", "centre_line", "dot",
+    "fit_height", "font_size_mm", "text_box", "text_extent",
 ]
 
 MM_PER_PT = 25.4 / 72.0
@@ -137,21 +142,27 @@ class Sheet:
     def labels(self) -> list[Text]:
         return [label for p in self.primitives for label in p.labels()]
 
-    def geometry(self) -> tuple[list[Segment], list[CircleMark], list[Text]]:
-        """Разложение листа на отрезки, окружности и надписи — общее для SVG и PDF."""
+    def geometry(
+        self,
+    ) -> tuple[list[Segment], list[CircleMark], list[tuple[tuple[float, float], ...]], list[Text]]:
+        """Разложение листа на отрезки, окружности, залитые многоугольники и надписи.
+
+        Общее для SVG и PDF: оба формата получают одно и то же разложение.
+        """
         segments = [s for p in self.primitives for s in p.segments()]
         circles = [c for p in self.primitives for c in p.circles()]
+        polygons = [polygon for p in self.primitives for polygon in p.polygons()]
         labels = [t for p in self.primitives for t in p.labels()]
-        return segments, circles, labels
+        return segments, circles, polygons, labels
 
     def bounds(self, *, primitives: str | None = None) -> tuple[float, float, float, float]:
         """Габарит всего нарисованного: (x0, y0, x1, y1), мм.
 
         ``primitives="text"`` оставляет в габарите только надписи.
         """
-        segments, circles, labels = self.geometry()
+        segments, circles, polygons, labels = self.geometry()
         if primitives == "text":
-            segments, circles = [], []
+            segments, circles, polygons = [], [], []
         xs: list[float] = []
         ys: list[float] = []
         for s in segments:
@@ -160,6 +171,9 @@ class Sheet:
         for c in circles:
             xs += [c.x - c.diameter / 2, c.x + c.diameter / 2]
             ys += [c.y - c.diameter / 2, c.y + c.diameter / 2]
+        for polygon in polygons:
+            xs += [x for x, _ in polygon]
+            ys += [y for _, y in polygon]
         for label in labels:
             x0, y0, x1, y1 = text_box(label)
             xs += [x0, x1]
@@ -311,9 +325,10 @@ class Sheet:
         ax.set_ylim(0.0, self.height)
         ax.set_axis_off()
 
-        segments, circles, labels = self.geometry()
+        segments, circles, polygons, labels = self.geometry()
         for s in segments:
             ax.plot([s.x1, s.x2], [s.y1, s.y2], color="black", linewidth=s.width / MM_PER_PT,
+                    linestyle="-" if s.dash is None else (0, s.dash),
                     solid_capstyle="butt", zorder=2)
         for c in circles:
             radius = c.diameter / 2.0
@@ -322,6 +337,9 @@ class Sheet:
             else:
                 ax.add_patch(plt.Circle((c.x, c.y), radius, fill=False, edgecolor="black",
                                         linewidth=c.width / MM_PER_PT, zorder=2))
+        for polygon in polygons:
+            ax.add_patch(plt.Polygon(polygon, closed=True, facecolor="black",
+                                     edgecolor="none", zorder=3))
         for label in labels:
             ax.text(label.x, label.y, label.text, fontsize=font_size_mm(label.height) / MM_PER_PT,
                     ha=ANCHOR_HA[label.anchor], va=VALIGN_VA[label.valign],
