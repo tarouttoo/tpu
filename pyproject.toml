@@ -1,0 +1,20 @@
+[project]
+name = "tpu-3865"
+version = "0.0.0"
+description = "Курсовой проект «Направляющая» 3865.00.10: модели деталей, документы этапов (схема базирования, ОК+КЭ, принципиальная схема)."
+# Верхняя граница — из-за кернела: у build123d/cadquery-ocp ещё нет колёс для Python 3.14.
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "cadgen==0.7.21",
+    "matplotlib",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pymupdf",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
