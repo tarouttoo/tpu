@@ -27,9 +27,9 @@ from guide import OVERALL_HEIGHT, OVERALL_WIDTH
 from post import POST_HEIGHT
 
 from ekd.dimensions import horizontal, vertical
-from ekd.primitives import CenterLine
+from ekd.primitives import centre_line
 from ekd.projection import View
-from ekd.sheet import TEXT_3_5, THICK, Sheet, text_extent
+from ekd.sheet import THICK, Sheet
 from ekd.symbols import (
     BASE_HEIGHT,
     BASE_WIDTH,
@@ -123,8 +123,9 @@ NOTES: tuple[str, ...] = (
     "швов и для съёма изделия.",
     "Зажимы З1…З6 — винтовые механические, ручные: буквенное обозначение устройства "
     "зажима не ставят (ГОСТ 3.1107-81, табл. 5, поз. 6, п. 15); на схеме З — зажим.",
-    "Зажимы З1, З2 и З3 стоят над опорами 1, 2 и 3; зажимы З4 и З5 — на осях опор 1, 2 "
-    "и 3: опрокидывающего момента при зажатии не возникает.",
+    "Зажимы З1, З2 и З3 стоят над опорами 1, 2 и 3; точки приложения зажимов З4 и З5 "
+    "лежат на осях опор 1, 2 и 3 (по ширине изделия) — опрокидывающего момента при "
+    "зажатии не возникает.",
     "Порядок закрепления: к заднему упору 4–5 (зажим З6) → к установочной базе (зажимы "
     "З1, З2, З3) → к внутренним упорам 7 и 8 (зажимы З4 и З5); зажим З6 затягивают после "
     "укладки и прихватки Перемычки.",
@@ -134,26 +135,9 @@ NOTES: tuple[str, ...] = (
     f"допусков изделия в {calc.num(calc.TIGHTENING_RATIO)} раза.",
 )
 
-def _wrap(sheet: Sheet, text: str, first_x: float, rest_x: float, y: float, *, height: float,
-          limit: float, step: float, prefix: str = "") -> float:
-    """Разложить примечание по строкам, не выходя за ``limit`` мм по ширине."""
-    words = text.split()
-    lines: list[str] = []
-    current = ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if text_extent(candidate, height)[0] > limit and current:
-            lines.append(current)
-            current = word
-        else:
-            current = candidate
-    lines.append(current)
-    for index, line in enumerate(lines):
-        if index == 0:
-            sheet.add_text(first_x, y, prefix + line, height=height)
-        else:
-            sheet.add_text(rest_x, y - index * step, line, height=height)
-    return y - len(lines) * step
+def _notes(sheet: Sheet) -> None:
+    """Примечания по ГОСТ 2.316 — раскладкой самого листа."""
+    sheet.add_notes(NOTES, x=NOTES_X, top=NOTES_TOP_Y, width=NOTES_WIDTH)
 
 
 def _plate(sheet: Sheet, front: View, top: View) -> None:
@@ -179,14 +163,14 @@ def _axes(sheet: Sheet, front: View, top: View) -> None:
     # Главный вид — ось изделия по длине: от низа плиты до верха вида.
     low = front.to_sheet((0.0, 0.0, PLATE_TOP_Z - PLATE_THICK))
     high = front.to_sheet((0.0, 0.0, OVERALL_HEIGHT + 8.0))
-    sheet.add(CenterLine(low[0], low[1], high[0], high[1]))
+    centre_line(sheet, *low, *high)
     # Вид сверху — оси по длине и по ширине изделия.
     back = top.to_sheet((0.0, -PLATE_Y - 4.0, 0.0))
     forward = top.to_sheet((0.0, PLATE_Y + 4.0, 0.0))
-    sheet.add(CenterLine(back[0], back[1], forward[0], forward[1]))
+    centre_line(sheet, *back, *forward)
     left = top.to_sheet((-PLATE_X - 4.0, 0.0, 0.0))
     right = top.to_sheet((PLATE_X + 4.0, 0.0, 0.0))
-    sheet.add(CenterLine(left[0], left[1], right[0], right[1]))
+    centre_line(sheet, *left, *right)
 
 
 def _supports(sheet: Sheet, front: View, top: View) -> None:
@@ -283,12 +267,8 @@ def _dimensions(sheet: Sheet, front: View, top: View) -> None:
 
 
 def _notes(sheet: Sheet) -> None:
-    """Примечания: той же сборкой, что и в первой схеме."""
-    y = NOTES_TOP_Y
-    indent = text_extent("9 ", TEXT_3_5)[0]
-    for index, note in enumerate(NOTES, start=1):
-        y = _wrap(sheet, note, NOTES_X, NOTES_X + indent, y, height=TEXT_3_5,
-                  limit=NOTES_WIDTH - indent, step=5.5, prefix=f"{index} ") - 3.0
+    """Примечания по ГОСТ 2.316 — раскладкой самого листа: нумерация и перенос строк."""
+    sheet.add_notes(NOTES, x=NOTES_X, top=NOTES_TOP_Y, width=NOTES_WIDTH)
 
 
 def build_sheet() -> Sheet:

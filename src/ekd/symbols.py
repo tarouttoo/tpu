@@ -54,9 +54,27 @@ def _placed(point: tuple[float, float], angle: float, x: float, y: float) -> tup
     return (x + point[0] * cos - point[1] * sin, y + point[0] * sin + point[1] * cos)
 
 
+class LocatedSymbol(Primitive):
+    """Знак, привязанный к точке изделия: точка привязки, поворот и место знака формы.
+
+    Общий предок опоры, упора и зажима — тем, что нужно знаку формы рабочей поверхности:
+    знать, вокруг какой точки его поворачивать и на сколько отойти влево.
+    """
+
+    x: float
+    y: float
+    #: Поворот знака вокруг точки привязки; у знака сверху поворот не имеет смысла.
+    angle: float = 0.0
+
+    @property
+    def mark_standoff(self) -> float:
+        """На сколько знак формы рабочей поверхности отстоит влево от точки привязки."""
+        return BASE_WIDTH / 2.0
+
+
 @dataclass(frozen=True)
-class SupportSide(Primitive):
-    """Неподвижная опора на виде спереди (сбоку): точка контакта в (x, y)."""
+class SupportSide(LocatedSymbol):
+    """Неподвижная опора (упор) на виде спереди или сбоку: точка контакта в (x, y)."""
 
     x: float
     y: float
@@ -96,14 +114,9 @@ class SupportSide(Primitive):
         offset = _placed((REACH + LABEL_GAP, -(NECK + BASE_HEIGHT) / 2.0), self.angle, self.x, self.y)
         return (Text(offset[0], offset[1], self.label, self.label_height, "start", "center"),)
 
-    @property
-    def mark_standoff(self) -> float:
-        """На сколько знак формы рабочей поверхности отстоит влево от точки привязки."""
-        return BASE_WIDTH / 2.0
-
 
 @dataclass(frozen=True)
-class SupportTop(Primitive):
+class SupportTop(LocatedSymbol):
     """Неподвижная опора на виде сверху: окружность ⌀6 с точкой в центре."""
 
     x: float
@@ -212,17 +225,16 @@ class SurfaceMark(Primitive):
         return (SURFACE_RADIUS * math.cos(angle), SURFACE_RADIUS * math.sin(angle))
 
 
-def surface_mark_left(sheet, symbol, *, form: str, gap: float = SURFACE_GAP) -> SurfaceMark:
+def surface_mark_left(sheet, symbol: LocatedSymbol, *, form: str,
+                      gap: float = SURFACE_GAP) -> SurfaceMark:
     """Поставить знак формы рабочей поверхности слева от обозначения (п. 11).
 
     Знак отходит от рабочей поверхности в сторону изделия — так его ставят в примерах
     приложения 2 стандарта: у опоры под изделием знак уходит вверх, у зажима над
     изделием — вниз.
     """
-    angle = getattr(symbol, "angle", 0.0) + 180.0
-    standoff = getattr(symbol, "mark_standoff", BASE_WIDTH / 2.0)
-    x = symbol.x - (standoff + gap + SURFACE_TICK / 2.0)
-    return sheet.add(SurfaceMark(x, symbol.y, form, angle))
+    x = symbol.x - (symbol.mark_standoff + gap + SURFACE_TICK / 2.0)
+    return sheet.add(SurfaceMark(x, symbol.y, form, symbol.angle + 180.0))
 
 
 # --- Зажимы (табл. 2) ---------------------------------------------------------
@@ -234,7 +246,7 @@ CLAMP_ARM = 10.0
 
 
 @dataclass(frozen=True)
-class ClampSide(Primitive):
+class ClampSide(LocatedSymbol):
     """Зажим на виде спереди или сбоку (ГОСТ 3.1107-81, табл. 2).
 
     Знак: треугольник с углом 60° при вершине (вершина — точка приложения силы),
@@ -299,11 +311,6 @@ class ClampSide(Primitive):
         x += direction[0] * LABEL_GAP
         anchor = "start" if direction[0] > 0 else "end"
         return (Text(x, y, self.label, self.label_height, anchor, "bottom"),)
-
-    @property
-    def mark_standoff(self) -> float:
-        """От точки приложения силы до левой кромки основания знака."""
-        return BASE_WIDTH / 2.0
 
 
 def clamp_side(sheet, x: float, y: float, *, angle: float = 0.0, spacing: float | None = None,

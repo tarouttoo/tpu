@@ -22,7 +22,7 @@ from guide import OVERALL_HEIGHT, OVERALL_LEN, OVERALL_WIDTH
 from post import POST_HEIGHT, POST_THICK, POST_WIDTH
 
 from ekd.projection import View
-from ekd.sheet import TEXT_3_5, TEXT_5, Sheet, dot, text_extent
+from ekd.sheet import TEXT_5, Sheet, dot
 from ekd.symbols import support_side, support_top
 
 _HERE = Path(__file__).resolve().parent
@@ -135,32 +135,6 @@ def centre_of_mass() -> tuple[float, float, float]:
     )
 
 
-def _wrap(sheet: Sheet, text: str, first_x: float, rest_x: float, y: float, *, height: float,
-          limit: float, step: float, prefix: str = "") -> float:
-    """Разложить примечание по строкам, не выходя за ``limit`` мм по ширине.
-
-    Первая строка идёт с номером примечания (``prefix``) от ``first_x``, продолжения —
-    от ``rest_x``, ровно под текстом первой строки.
-    """
-    words = text.split()
-    lines: list[str] = []
-    current = ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if text_extent(candidate, height)[0] > limit and current:
-            lines.append(current)
-            current = word
-        else:
-            current = candidate
-    lines.append(current)
-    for index, line in enumerate(lines):
-        if index == 0:
-            sheet.add_text(first_x, y, prefix + line, height=height)
-        else:
-            sheet.add_text(rest_x, y - index * step, line, height=height)
-    return y - len(lines) * step
-
-
 def _leader(sheet: Sheet, start: tuple[float, float], shelf: tuple[float, float], text: str, *,
             anchor: str, mark: bool = True) -> None:
     """Номер базы на линии-выноске: точка на поверхности, полка и номер.
@@ -222,11 +196,7 @@ def build_sheet() -> Sheet:
         support_top(sheet, *top.to_sheet(POINTS[number]), label=str(number))
 
     # Примечания.
-    y = NOTES_TOP_Y
-    indent = text_extent("9 ", TEXT_3_5)[0]
-    for index, note in enumerate(NOTES, start=1):
-        y = _wrap(sheet, note, NOTES_X, NOTES_X + indent, y, height=TEXT_3_5,
-                  limit=NOTES_WIDTH - indent, step=5.5, prefix=f"{index} ") - 2.0
+    sheet.add_notes(NOTES, x=NOTES_X, top=NOTES_TOP_Y, width=NOTES_WIDTH, gap=2.0)
     return sheet
 
 

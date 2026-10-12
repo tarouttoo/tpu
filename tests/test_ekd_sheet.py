@@ -151,8 +151,36 @@ def test_pdf_carries_selectable_text(tmp_path):
     assert "Схема базирования" in _pdf_page(pdf).get_text()
 
 
-# --- залитые многоугольники и штрихпунктирные линии ---------------------------
+# --- примечания ----------------------------------------------------------------
 
+
+def test_notes_are_numbered_and_wrapped_to_the_given_width():
+    sheet = ekd.Sheet("A3")
+    notes = ("Опоры — неподвижные; знаки по ГОСТ 3.1107-81, табл. 1.",
+             "Плита — основание приспособления: опоры, упоры и зажимы крепятся на ней.")
+    bottom = sheet.add_notes(notes, x=100.0, top=250.0, width=60.0, step=5.5, gap=3.0)
+    lines = sheet.labels()
+    assert lines[0].text.startswith("1 Опоры")
+    assert any(label.text.startswith("2 Плита") for label in lines), "второе примечание — с номером"
+    for label in lines:
+        width = ekd.text_extent(label.text, label.height)[0]
+        assert label.x + width <= 100.0 + 60.0 + 0.01, f"«{label.text}» шире отведённой полосы"
+    assert bottom < 250.0, "примечания идут вниз от верхней строки"
+
+
+def test_note_lines_continue_under_the_text_of_the_first_line():
+    sheet = ekd.Sheet("A3")
+    sheet.add_notes(("Опоры 1–3 и упоры — неподвижные; знаки по ГОСТ 3.1107-81, табл. 1, "
+                     "поз. 1; форма рабочей поверхности — слева от знака.",),
+                    x=100.0, top=250.0, width=40.0)
+    lines = sheet.labels()
+    assert len(lines) > 1, "длинное примечание переносится"
+    first, second = lines[0], lines[1]
+    assert second.x > first.x, "продолжение сдвинуто на ширину номера"
+    assert second.y < first.y
+
+
+# --- залитые многоугольники и штрихпунктирные линии ---------------------------
 
 def test_filled_polygons_and_dashes_reach_both_files(tmp_path):
     """Стрелки размеров и осевые линии одинаково попадают в SVG и PDF."""

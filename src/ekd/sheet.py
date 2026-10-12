@@ -308,6 +308,44 @@ class Sheet:
             if label:
                 self.add_text(bx0 + 1.5, by0 + y - 2.5, label, height=TEXT_2_5, valign="center")
 
+    # -- примечания -------------------------------------------------------------
+
+    def add_notes(self, notes: Sequence[str], *, x: float, top: float, width: float,
+                  height: float = TEXT_3_5, step: float = 5.5, gap: float = 3.0,
+                  indent: str = "9 ") -> float:
+        """Примечания по ГОСТ 2.316: нумерованные строки с переносом по ширине.
+
+        Каждое примечание начинается номером (``1 ``), продолжения идут ровно под текстом
+        первой строки. ``width`` — предельная ширина строки, ``step`` — шаг строк,
+        ``gap`` — просвет между примечаниями. Возвращает низ последней строки.
+        """
+        shift = text_extent(indent, height)[0]
+        y = top
+        for index, note in enumerate(notes, start=1):
+            y = self._add_note(note, first_x=x, rest_x=x + shift, y=y, height=height,
+                               limit=width - shift, step=step, prefix=f"{index} ") - gap
+        return y
+
+    def _add_note(self, text: str, *, first_x: float, rest_x: float, y: float, height: float,
+                  limit: float, step: float, prefix: str) -> float:
+        """Разложить одно примечание по строкам, не выходя за ``limit`` мм по ширине."""
+        lines: list[str] = []
+        current = ""
+        for word in text.split():
+            candidate = f"{current} {word}".strip()
+            if text_extent(candidate, height)[0] > limit and current:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        lines.append(current)
+        for index, line in enumerate(lines):
+            if index == 0:
+                self.add_text(first_x, y, prefix + line, height=height)
+            else:
+                self.add_text(rest_x, y - index * step, line, height=height)
+        return y - len(lines) * step
+
     # -- вывод -----------------------------------------------------------------
 
     def _figure(self):
