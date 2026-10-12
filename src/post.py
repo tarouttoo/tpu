@@ -1,4 +1,4 @@
-"""Стойка — 3865.00.11. Hardox 450 plate, 16 mm thick, 90 × 90 × 16."""
+"""Стойка — 3865.00.11. Лист 09Г2С по ГОСТ 19281-2014, 16 мм, 90 × 90 × 16."""
 
 from cadgen import build123d as bd
 from cadgen import step

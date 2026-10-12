@@ -1,5 +1,7 @@
 """Направляющая — 3865.00.10 (assembly: 2 × Стойка + 1 × Перемычка).
 
+Лист 09Г2С по ГОСТ 19281-2014.
+
 Two posts stand on edge; the crossbar sits on top, centred, so each post
 protrudes 10.5 mm past the crossbar's ends. Envelope 156 × 90 × 106.
 """

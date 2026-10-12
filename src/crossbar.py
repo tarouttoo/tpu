@@ -1,4 +1,4 @@
-"""Перемычка — 3865.00.12. Hardox 450 plate, 16 mm thick, 135 × 90 × 16."""
+"""Перемычка — 3865.00.12. Лист 09Г2С по ГОСТ 19281-2014, 16 мм, 135 × 90 × 16."""
 
 from cadgen import build123d as bd
 from cadgen import step

@@ -24,7 +24,7 @@ def guide_drawing():
         "A3",
         title="НАПРАВЛЯЮЩАЯ",
         part_number="3865.00.10",
-        material="Hardox 450",
+        material="09Г2С ГОСТ 19281-2014",
         revision="",
         author="",
         projection="FIRST ANGLE",
