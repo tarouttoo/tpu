@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest
 
 from ekd import estd
-from ekd.sheet import SHEET_SIZES, MARGIN, MARGIN_LEFT
+from ekd.sheet import MARGIN, MARGIN_LEFT, SHEET_SIZES
+# Помощники сравнения SVG и PDF — из теста листа ЕСКД: лист собирается одним и тем же
+# разложением примитивов, поэтому и проверять совпадение форматов нужно одним способом.
 from test_ekd_sheet import _pdf_ink_bbox, _svg_ink_bbox
 
 #: Ширина граф строки: лист A4 минус поля и графа 1.
@@ -19,7 +21,7 @@ CONTENT_W = SHEET_SIZES["A4"][0] - MARGIN_LEFT - MARGIN - estd.GRAPH1_W
 
 def card(**kwargs) -> estd.OperationalCard:
     fields = dict(designation="ФЮРА.60190.00001", product="3865.00.10 СБ",
-                  name="Направляющая", sheet_count=2)
+                  name="Направляющая", organisation="ФЮРА (ТПУ)", letter="У", sheet_count=2)
     fields.update(kwargs)
     return estd.OperationalCard(**fields)
 
@@ -128,6 +130,14 @@ def test_every_sheet_carries_the_designation_and_the_form_number():
                        for cell in cells)
         assert "ФЮРА.60190.00001" in row, "обозначение документа есть на каждом листе"
         assert form in row, f"на листе не указана форма документа ({form})"
+
+
+def test_every_sheet_carries_the_product_and_its_letter():
+    """Адресный блок есть на каждом листе: изделие, его обозначение и литера — везде."""
+    for first in (True, False):
+        row = " ".join(cell.text for cells in card(first=first).band() for cell in cells)
+        for value in ("3865.00.10 СБ", "Направляющая", "ФЮРА (ТПУ)", "У"):
+            assert value in row, f"на листе нет адресной графы «{value}»"
 
 
 def test_nothing_is_drawn_outside_the_frame():

@@ -3,9 +3,10 @@
 Операционную карту (ОК) заполняют построчно, и каждому типу строки соответствует
 служебный символ: он условно выражает состав информации в графах этой строки
 (ГОСТ 3.1118-82, табл. 2; ГОСТ 3.1407-86, п. 2.8). Для ОК с горизонтальным расположением
-поля подшивки это символы А, Б, К/М, О, Т, Р, причём строка со служебным символом Р несёт
-сокращённое обозначение типового блока режимов (РС1 — блок режимов дуговой сварки),
-а на последующих строках блока ставится только символ Р (ГОСТ 3.1407-86, приложение 1, п. 3).
+поля подшивки это символы А, Б, К/М, О, Т, Р, причём строку режимов предваряет
+строка-заголовок блока: в ней стоит сокращённое обозначение блока (РС1 — блок режимов
+дуговой сварки) и наименования граф блока, а сами значения режима записывают в строках со
+служебным символом Р (ГОСТ 3.1407-86, приложение 1, п. 3).
 
 Первый (заглавный) лист несёт адресный блок и блок состава исполнителей, последующие —
 только адресный: обозначение документа сохраняется на каждом листе
@@ -33,10 +34,14 @@ from ekd.primitives import (
 from ekd.sheet import Sheet
 
 __all__ = [
-    "BAND_ROW_H", "HEAD_ROW_H", "ROW_H", "BOTTOM_ROW_H", "GRAPH1_W", "PAD", "CONTENT_W",
+    # геометрия бланка — по ней проверяются графы и собираются листы
+    "BAND_ROW_H", "HEAD_ROW_H", "ROW_H", "BOTTOM_ROW_H", "GRAPH1_W", "PAD", "VPAD",
+    "CENTER_LIMIT", "CONTENT_W", "BAND_LABEL_W", "BAND_FORM_W", "BAND_NAME_W", "BAND_SIGN_W",
+    "BAND_DATE_W",
+    # бланк и его заполнение
     "Graph", "GRAPHS", "REGIME", "REGIME_HEADER", "REGIME_BLOCK", "CHANGE_GRAPHS",
-    "EXECUTOR_ROWS", "DOCUMENT_ROW", "Cell", "Line", "OperationalCard", "graphs_for",
-    "card_document", "wrap_text",
+    "EXECUTOR_ROWS", "DOCUMENT_ROW", "CONTENT_SIZES", "MARK_SIZES",
+    "Cell", "Line", "OperationalCard", "graphs_for", "fit_in", "wrap_text", "card_document",
 ]
 
 # --- геометрия бланка ---------------------------------------------------------
@@ -106,13 +111,17 @@ GRAPHS: dict[str, tuple[Graph, ...]] = {
 REGIME: tuple[Graph, ...] = (Graph(45.0, "ПС"), Graph(40.0, "НП"), Graph(40.0, "Пл"),
                              Graph(67.0, "U"), Graph(67.0, "I"))
 
-#: Служебные символы, у которых своя раскладка граф.
-_SYMBOL_GRAPHS: dict[str, str] = {"К": "К/М", "М": "К/М", "Р": "РС1", "РС1": "РС1"}
+#: Служебные символы, у которых своя раскладка граф: К и М записывают в графы строки К/М,
+#: Р — в графы блока режимов сварки.
+_SYMBOL_GRAPHS: dict[str, str] = {"К": "К/М", "М": "К/М", "Р": "РС1"}
 
 #: Обозначение блока режимов сварки в графе 1: строка-заголовок блока не нумеруется.
 REGIME_BLOCK = "РС1"
 #: Наименования граф блока режимов — только для чтения: по ним собирается строка-заголовок.
 REGIME_HEADER = tuple(graph.name for graph in REGIME)
+
+#: Раскладки граф: строки форм ЕСТД и блок режимов сварки — одна карта на все раскладки.
+_LAYOUTS: dict[str, tuple[Graph, ...]] = {**GRAPHS, REGIME_BLOCK: REGIME}
 
 #: Наименования граф адресного блока и состава исполнителей (ГОСТ 3.1103-82, блоки Б1–Б5).
 CHANGE_GRAPHS = ("Изм.", "Лист", "№ докум.", "Подп.", "Дата")
@@ -123,11 +132,8 @@ DOCUMENT_ROW = ("ОК", "Операционная карта")
 
 def graphs_for(symbol: str) -> tuple[Graph, ...]:
     """Графы строки с этим служебным символом (ГОСТ 3.1407-86, табл. 2)."""
-    kind = _SYMBOL_GRAPHS.get(symbol, symbol)
-    if kind in ("Р", "РС1"):
-        return REGIME
     try:
-        return GRAPHS[kind]
+        return _LAYOUTS[_SYMBOL_GRAPHS.get(symbol, symbol)]
     except KeyError:
         raise ValueError(
             f"неизвестный служебный символ {symbol!r}; известные: "
@@ -179,7 +185,11 @@ def fit_in(text: str, width: float, room: float, sizes: Sequence[float] = CONTEN
 
 @dataclass(frozen=True)
 class Cell:
-    """Ячейка адресного блока: ширина, запись и выключка."""
+    """Ячейка адресного блока: ширина, запись и выключка.
+
+    ``align`` — выключка записи: ``middle`` по центру графы, ``start`` от левого края,
+    ``auto`` — по ширине графы (узкие графы выключаются по центру, широкие — от края).
+    """
 
     width: float
     text: str = ""
@@ -212,11 +222,11 @@ class OperationalCard:
     designation: str
     product: str
     name: str
+    organisation: str
+    letter: str
     first: bool = True
     sheet_number: int = 1
     sheet_count: int = 1
-    organisation: str = "ФЮРА (ТПУ)"
-    letter: str = "У"
     rows: list[Line] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -296,10 +306,13 @@ class OperationalCard:
         rows = [header, (Cell(BAND_LABEL_W, "Взам."), *support[1:]),
                 (Cell(BAND_LABEL_W, "Подл."), *support[1:])]
         if not self.first:
-            rows.append((Cell(BAND_LABEL_W, "Лист"), Cell(28.0, str(self.sheet_number)),
-                         Cell(20.0, "Листов"), Cell(28.0, str(self.sheet_count)),
-                         Cell(30.0, self.organisation), Cell(44.0, self.product),
-                         Cell(50.0, self.designation), Cell(37.0, self.name, align="start")))
+            # Адресный блок последующего листа (ГОСТ 3.1103-82, блок Б1): организация, изделие,
+            # обозначение документа и литера — те же, что на первом листе, плюс номер листа.
+            rows.append((Cell(20.0, "Лист"), Cell(24.0, str(self.sheet_number)),
+                         Cell(20.0, "Листов"), Cell(24.0, str(self.sheet_count)),
+                         Cell(26.0, self.organisation), Cell(42.0, self.product),
+                         Cell(48.0, self.designation), Cell(19.0, self.letter),
+                         Cell(36.0, self.name, align="start")))
             return tuple(rows)
 
         address = (Cell(30.0, self.organisation, align="start"), Cell(44.0, self.product),
@@ -395,7 +408,7 @@ class OperationalCard:
             if right < x1:
                 sheet.add_line(right, y_bottom, right, y_top, width=THIN)
             self._label(sheet, (left, right), centre, cell, room,
-                        align="middle" if head else "", sizes=sizes)
+                        align="middle" if head else "auto", sizes=sizes)
 
     def _band_row(self, sheet: Sheet, x0: float, y_top: float, cells: Sequence[Cell],
                   width: float) -> None:
@@ -412,15 +425,21 @@ class OperationalCard:
                         y_top - y_bottom, cell.align)
 
     def _label(self, sheet: Sheet, span: tuple[float, float], y: float, text: str,
-               room: float, align: str = "", sizes: Sequence[float] = CONTENT_SIZES) -> None:
-        """Запись в графе: подбор размера шрифта и выключка по ширине графы."""
+               room: float, align: str = "auto",
+               sizes: Sequence[float] = CONTENT_SIZES) -> None:
+        """Запись в графе: подбор размера шрифта и выключка по ширине графы.
+
+        ``align="auto"`` — выключка по ширине графы: в узких графах (коды, числа, знаки)
+        запись идёт по центру, в широких — от левого края.
+        """
         if not text:
             return
         width = span[1] - span[0]
         height = fit_in(text, width - 2 * PAD, room - 2 * VPAD, sizes)
-        mode = align or ("middle" if width <= CENTER_LIMIT else "start")
-        x = (span[0] + span[1]) / 2.0 if mode == "middle" else span[0] + PAD
-        sheet.add_text(x, y, text, height=height, anchor=mode, valign="center")
+        if align == "auto":
+            align = "middle" if width <= CENTER_LIMIT else "start"
+        x = (span[0] + span[1]) / 2.0 if align == "middle" else span[0] + PAD
+        sheet.add_text(x, y, text, height=height, anchor=align, valign="center")
 
     def _assert_width(self, cells: Sequence[Cell | Graph], width: float, what: str) -> None:
         """Графы строки должны занимать лист целиком — иначе бланк поедет."""

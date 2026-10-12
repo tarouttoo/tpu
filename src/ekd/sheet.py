@@ -390,6 +390,8 @@ def save_document(
 
         path = Path(pdf)
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Один PDF на документ: страницы добавляет только PdfPages — лист рисуется тем же
+        # разложением примитивов, но `Figure.savefig` пишет файл на один лист.
         # CreationDate=None: файл не меняется от запуска к запуску.
         with PdfPages(path, metadata={"CreationDate": None}) as pages:
             for sheet in sheets:

@@ -35,12 +35,11 @@ def row_cells(card, symbol: str) -> list[tuple[str, ...]]:
 
 
 def test_operations_ascend_with_a_reserve_of_numbers():
-    numbers = [number for number, _ in doc.OPERATIONS]
+    numbers = [operation.number for operation in doc.OPERATIONS]
     assert numbers == ["05", "10", "15"]
     assert [int(number) for number in numbers] == [5, 10, 15], (
         "номера операций назначают с резервом, шагом 5: в пропуск можно вставить операцию"
     )
-    assert numbers == sorted(numbers), "операции идут по возрастанию"
     assert [card.sheet_number for card in doc.cards()] == [1, 2, 3]
     assert all(card.sheet_count == len(doc.OPERATIONS) for card in doc.cards())
     assert [card.first for card in doc.cards()] == [True, False, False], (
@@ -49,12 +48,14 @@ def test_operations_ascend_with_a_reserve_of_numbers():
 
 
 def test_each_sheet_carries_its_own_operation():
-    for index, (number, title) in enumerate(doc.OPERATIONS):
+    for index, operation in enumerate(doc.OPERATIONS):
         card = doc.card_for(index)
         row = row_cells(card, "А")[0]
-        assert row[3] == number, f"лист {index + 1} — не операция {number}"
-        assert row[4] == title
-        assert number in card.sheet().texts(), f"на листе {index + 1} нет номера операции"
+        assert row[3] == operation.number, f"лист {index + 1} — не операция {operation.number}"
+        assert row[4] == operation.title
+        assert operation.number in card.sheet().texts(), (
+            f"на листе {index + 1} нет номера операции"
+        )
 
 
 # --- операция 05 сборка --------------------------------------------------------
@@ -142,6 +143,25 @@ def test_position_of_welding_allows_working_without_turning_the_part():
     assert "на бок" in text and "без кантовки и перезакрепления" in text
 
 
+def test_every_piece_of_equipment_is_used_by_a_transition():
+    """Оборудование строк Б не «висит»: на нём выполняется переход операции."""
+    grinding = [text for text in columns(doc.card_for(1), "О") if "Зачистить" in text]
+    assert grinding, "зачистка — переход операции сварки"
+    for number, (card, equipment) in enumerate(zip(doc.cards(), (doc.FIXTURE, doc.FIXTURE, "Стол")), 1):
+        names = [cells[0] for cells in row_cells(card, "Б")]
+        assert any(name.startswith(equipment) for name in names), (
+            f"лист {number}: нет оборудования операции"
+        )
+    assert not any(name.startswith(doc.GRINDER) for name in
+                   (cells[0] for cells in row_cells(doc.card_for(0), "Б"))), (
+        "углошлифовальная машина нужна операции сварки, где есть переход зачистки"
+    )
+    assert any(name.startswith(doc.GRINDER) for name in
+               (cells[0] for cells in row_cells(doc.card_for(1), "Б"))), (
+        "в операции сварки есть зачистка — машина должна стоять в её оборудовании"
+    )
+
+
 # --- операция 15 контроль ------------------------------------------------------
 
 
@@ -214,6 +234,7 @@ def test_every_sheet_carries_the_designation_of_the_document(sheets):
     for number, sheet in enumerate(sheets, start=1):
         assert doc.DESIGNATION in sheet.texts(), f"лист {number} без обозначения документа"
         assert doc.PRODUCT in sheet.texts() and doc.NAME in sheet.texts()
+        assert doc.LETTER in sheet.texts(), f"лист {number} без литеры документа"
 
 
 def test_first_sheet_has_the_executors_and_the_others_do_not(sheets):
@@ -259,13 +280,13 @@ def test_pdf_pages_carry_the_same_records_as_the_sheets(tmp_path):
     pymupdf = pytest.importorskip("pymupdf")
     pdf = [path for path in doc.build(out_dir=tmp_path) if path.suffix == ".pdf"][0]
     document = pymupdf.open(pdf)
-    for index, (number, title) in enumerate(doc.OPERATIONS):
+    for index, operation in enumerate(doc.OPERATIONS):
         text = document[index].get_text()
-        assert title in text, f"страница {index + 1}: нет операции {number}"
+        assert operation.title in text, f"страница {index + 1}: нет операции {operation.number}"
         assert doc.DESIGNATION in text
-        for other, other_title in doc.OPERATIONS[:index] + doc.OPERATIONS[index + 1:]:
-            assert other_title not in text, (
-                f"страница {index + 1} несёт ещё и операцию {other}"
+        for other in doc.OPERATIONS[:index] + doc.OPERATIONS[index + 1:]:
+            assert other.title not in text, (
+                f"страница {index + 1} несёт ещё и операцию {other.number}"
             )
 
 

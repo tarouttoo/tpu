@@ -10,7 +10,8 @@
 полярность, один проход, положение вертикальное (В). Изделие уложено на бок, все четыре
 шва доступны без кантовки и перезакрепления. Записывают только параметры принятого способа
 сварки: диаметр сопла, расстояние от сопла до изделия и вылет электрода относятся к
-механизированным способам и в карту не входят (лекция 1, § 5).
+механизированным способам и в карту не входят (лекция 1, § 5). Род сварочного тока записан
+в графе оборудования — так предписывает ГОСТ 3.1407-86 (п. 2.8.1).
 
 За один запуск выходят и SVG, и PDF:
 
@@ -19,7 +20,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from crossbar import BAR_LEN, BAR_THICK, BAR_WIDTH
 from post import POST_HEIGHT, POST_THICK, POST_WIDTH
@@ -47,26 +50,35 @@ LETTER = "У"
 #: Плотность листовой стали 09Г2С (ГОСТ 19281-2014), кг/м³.
 STEEL_DENSITY = 7850.0
 
-#: Операции процесса: номер и запись графы «Код, наименование операции». Коды — по коду
-#: вида процесса по методу выполнения (Хайдарова, табл. 2.4: 88 — сборка, 90 — сварка,
-#: 02 — технический контроль), как в примере оформления ОК на сварку (рис. 2.10).
-OPERATIONS: tuple[tuple[str, str], ...] = (
-    ("05", "88, Сборка"),
-    ("10", "90, Сварка"),
-    ("15", "02, Контроль (визуально-измерительный)"),
-)
+#: Место выполнения операции — графы «Цех», «Уч.», «РМ»: один цех, один участок, одно
+#: рабочее место (порядок записи этих обозначений устанавливает организация).
+PLACE: tuple[str, str, str] = ("1", "1", "1")
 
 #: Коды профессий по ОКПДТР (ОК 016-94): слесарь механосборочных работ, электрогазосварщик,
-#: контролер сварочных работ. Степень механизации (СМ) — 1…5 по ОКПДТР: 3 — работа вручную
-#: при машинах и механизмах, 4 — вручную не при машинах и механизмах. Условия труда (УТ):
-#: 2 — тяжёлые и вредные (сборочно-сварочные работы). Разряды — см. README этапа.
+#: контролер сварочных работ.
 PROF_ASSEMBLER = "18466"
 PROF_WELDER = "19756"
 PROF_INSPECTOR = "13057"
-SM_MACHINE = "3"
-SM_HAND = "4"
+#: Степень механизации труда по ОКПДТР: 3 — рабочий выполняет работу вручную при машинах и
+#: механизмах (приспособление, источник питания), 4 — вручную не при машинах и механизмах.
+SM_ASSISTED = "3"
+SM_MANUAL = "4"
+#: Условия труда по ОКПДТР: 2 — тяжёлые и вредные (сборочно-сварочные работы).
 CONDITIONS = "2"
+#: Количество исполнителей на операции: изделие массой 3,56 кг собирает один рабочий.
 WORKERS = "1"
+#: Разряды работ (ЕТКС, выпуск 2): сборка — 3, сварка — 4, контроль — 3.
+GRADE_ASSEMBLER = "3"
+GRADE_WELDER = "4"
+GRADE_INSPECTOR = "3"
+
+#: Оборудование и оснастка, общие для сборки и сварки: изделие собирают и сваривают в одном
+#: приспособлении, швы зачищают углошлифовальной машиной.
+FIXTURE = "Приспособление сборочно-сварочное (проектируемое)"
+POWER_UNIT = "Выпрямитель сварочный ВД-306, постоянный ток"
+GRINDER = "Машина ручная углошлифовальная"
+OUTFIT = ("ПР — приспособление сборочно-сварочное (проектируемое); СЛ — молоток слесарный; "
+          "зубило; щётка металлическая.")
 
 #: Электрод и стандарт на него — одни и те же на прихватках и на сварке.
 ELECTRODE = "Электроды УОНИ-13/55 (тип Э50А), ⌀3,0 мм"
@@ -75,10 +87,29 @@ ELECTRODE_STD = "ГОСТ 9467-75"
 #: ПС — положение сварки по ГОСТ 11969-79 (В — вертикальное), НП — номер прохода,
 #: Пл — полярность (О — обратная), U — напряжение дуги, I — сила сварочного тока.
 WELD_MODE: tuple[str, ...] = ("В", "1", "О", "24–26 В", "90–100 А")
-#: Прихватки: четыре длиной 20 мм, по две на каждый стык.
-TACKS = "Прихватить заготовки согласно эскизу: прихватки 4 × 20 мм, по две на каждый стык."
-#: Зачистка — переход вспомогательный, после сварки.
+#: Прихватки: четыре длиной 20 мм — по две на каждый из двух стыков изделия.
+TACKS = ("Прихватить заготовки согласно эскизу: прихватки 4 × 20 мм (четыре прихватки "
+         "длиной 20 мм), по две на каждый стык.")
+#: Зачистка — вспомогательный переход операции сварки: её выполняет углошлифовальная машина,
+#: поэтому машина записана в оборудовании операции 10.
 DESLAG = "Зачистить швы от шлака и брызг металла."
+
+#: Строки операции заполняет одна функция: (карта, операция).
+Fill = Callable[[OperationalCard, "Operation"], None]
+
+
+@dataclass(frozen=True)
+class Operation:
+    """Операция процесса: номер, запись графы «Код, наименование операции» и её строки.
+
+    Номер, наименование, применяемые документы и строки карты лежат вместе, поэтому новая
+    операция добавляется одним элементом ``OPERATIONS``.
+    """
+
+    number: str
+    title: str
+    document: str
+    fill: Fill
 
 
 def mass_kg() -> float:
@@ -95,83 +126,94 @@ def mass_text() -> str:
 
 def card_for(index: int) -> OperationalCard:
     """Собрать лист операционной карты для операции ``index`` (05, 10, 15)."""
-    number, title = OPERATIONS[index]
+    operation = OPERATIONS[index]
     card = OperationalCard(
         designation=DESIGNATION,
         product=PRODUCT,
         name=NAME,
+        organisation=ORGANISATION,
+        letter=LETTER,
         first=index == 0,
         sheet_number=index + 1,
         sheet_count=len(OPERATIONS),
-        organisation=ORGANISATION,
-        letter=LETTER,
     )
-    _fill(card, index, number, title)
+    operation.fill(card, operation)
     return card
 
 
-def _fill(card: OperationalCard, index: int, number: str, title: str) -> None:
-    builders = (_assembly, _welding, _control)
-    builders[index](card, number, title)
+# --- строки операций ----------------------------------------------------------
 
 
-def _operation_row(card: OperationalCard, number: str, title: str, document: str) -> None:
+def _operation_row(card: OperationalCard, operation: Operation) -> None:
     """Строка А — цех, участок, рабочее место, операция, документы и масса изделия."""
-    card.add("А", "1", "1", "1", number, title, document, mass_text())
+    card.add("А", *PLACE, operation.number, operation.title, operation.document, mass_text())
 
 
-def _assembly(card: OperationalCard, number: str, title: str) -> None:
-    """Операция 05: установка заготовок в приспособление, закрепление и прихватки."""
-    _operation_row(card, number, title, "ГОСТ 5264-80; ИОТ № 1")
-    card.add("Б", "Приспособление сборочно-сварочное (проектируемое)", SM_MACHINE,
-             PROF_ASSEMBLER, "3", CONDITIONS, WORKERS)
-    card.add("Б", "Выпрямитель сварочный ВД-306, постоянный ток", SM_MACHINE,
-             PROF_WELDER, "4", CONDITIONS, WORKERS)
-    card.add("Б", "Машина ручная углошлифовальная", SM_MACHINE, PROF_ASSEMBLER, "3",
-             CONDITIONS, WORKERS)
+def _workplace_rows(card: OperationalCard) -> None:
+    """Строки Б — оборудование операции и профессии, которые на нём работают."""
+    card.add("Б", FIXTURE, SM_ASSISTED, PROF_ASSEMBLER, GRADE_ASSEMBLER, CONDITIONS, WORKERS)
+    card.add("Б", POWER_UNIT, SM_ASSISTED, PROF_WELDER, GRADE_WELDER, CONDITIONS, WORKERS)
+
+
+def _material_row(card: OperationalCard) -> None:
+    """Строка М — электроды: одни и те же на прихватках и на сварке."""
+    card.add("М", ELECTRODE, ELECTRODE_STD, "", "", "", "")
+
+
+def _outfit_row(card: OperationalCard) -> None:
+    """Строка Т — технологическая оснастка операции, после описания первого перехода."""
+    card.add("Т", OUTFIT)
+
+
+def _assembly(card: OperationalCard, operation: Operation) -> None:
+    """Операция 05: установка заготовок в приспособление, закрепление и прихватки.
+
+    Устанавливают заготовки, а не изделие: изделие получается в результате этой операции.
+    Прихватки выполняют тем же электродом и на том же режиме, что и сварку, поэтому
+    источник питания и блок режимов стоят и в операции сборки.
+    """
+    _operation_row(card, operation)
+    _workplace_rows(card)
     card.blank()
     # Комплектующие — по эскизу; КИ — количество деталей на изделие.
     card.add("К", "Стойка", "3865.00.11", "", "", "", "2")
     card.add("К", "Перемычка", "3865.00.12", "", "", "", "1")
     card.blank()
-    card.add("М", ELECTRODE, ELECTRODE_STD, "", "", "", "")
+    _material_row(card)
     card.blank()
     card.add("О", "1. Установить заготовки — стойку 3865.00.11 (2 шт.) и перемычку "
                  "3865.00.12 (1 шт.) — в приспособление, обеспечивая зазор между ними "
                  "согласно эскизу.")
-    card.add("Т", "ПР — приспособление сборочно-сварочное (проектируемое); СЛ — молоток "
-                 "слесарный; зубило; щётка металлическая.")
+    _outfit_row(card)
     card.add("О", "2. Закрепить заготовки в приспособлении.")
     card.add("О", "3. " + TACKS)
     card.add("РС1", *REGIME_HEADER)
     card.add("Р", *WELD_MODE)
 
 
-def _welding(card: OperationalCard, number: str, title: str) -> None:
-    """Операция 10: четыре угловых шва У5, k = 8 мм, ручная дуговая сварка."""
-    _operation_row(card, number, title, "ГОСТ 5264-80; ИОТ № 1")
-    card.add("Б", "Приспособление сборочно-сварочное (проектируемое)", SM_MACHINE,
-             PROF_ASSEMBLER, "3", CONDITIONS, WORKERS)
-    card.add("Б", "Выпрямитель сварочный ВД-306, постоянный ток", SM_MACHINE,
-             PROF_WELDER, "4", CONDITIONS, WORKERS)
+def _welding(card: OperationalCard, operation: Operation) -> None:
+    """Операция 10: четыре угловых шва У5, k = 8 мм, ручная дуговая сварка и зачистка."""
+    _operation_row(card, operation)
+    _workplace_rows(card)
+    card.add("Б", GRINDER, SM_ASSISTED, PROF_ASSEMBLER, GRADE_ASSEMBLER, CONDITIONS, WORKERS)
     card.blank()
-    card.add("М", ELECTRODE, ELECTRODE_STD, "", "", "", "")
+    _material_row(card)
     card.blank()
     card.add("О", "1. Сварить ручной дуговой сваркой покрытыми электродами четыре угловых "
                  "шва У5 по ГОСТ 5264-80 с катетом k = 8 мм, по одному проходу на шов, "
                  "согласно эскизу. Изделие уложено на бок: сварку выполняют в вертикальном "
                  "положении, без кантовки и перезакрепления.")
-    card.add("Т", "ПР — приспособление сборочно-сварочное (проектируемое); СЛ — молоток "
-                 "слесарный; зубило; щётка металлическая.")
+    _outfit_row(card)
     card.add("О", "2. " + DESLAG)
     card.add("РС1", *REGIME_HEADER)
     card.add("Р", *WELD_MODE)
 
 
-def _control(card: OperationalCard, number: str, title: str) -> None:
+def _control(card: OperationalCard, operation: Operation) -> None:
     """Операция 15: визуально-измерительный контроль швов и размеров изделия."""
-    _operation_row(card, number, title, "ГОСТ 3242-79; ИОТ № 1")
-    card.add("Б", "Стол контролера", SM_HAND, PROF_INSPECTOR, "3", CONDITIONS, WORKERS)
+    _operation_row(card, operation)
+    card.add("Б", "Стол контролера", SM_MANUAL, PROF_INSPECTOR, GRADE_INSPECTOR, CONDITIONS,
+             WORKERS)
     card.blank()
     card.add("О", "1. Провести визуально-измерительный контроль сварных швов: проверить "
                  "наличие и форму швов, отсутствие наружных дефектов — трещин, подрезов, "
@@ -179,6 +221,16 @@ def _control(card: OperationalCard, number: str, title: str) -> None:
     card.add("Т", "СИ — лупа 4×; штангенциркуль ШЦ-I-125-0,1; шаблон сварщика УШС-3.")
     card.add("О", "2. Измерить катет угловых швов k = 8 мм и габаритные размеры изделия "
                  "согласно эскизу.")
+
+
+#: Операции процесса. Коды в графе «Код, наименование операции» — по коду вида процесса по
+#: методу выполнения (Хайдарова, табл. 2.4: 88 — сборка, 90 — сварка, 02 — технический
+#: контроль), как в примере оформления ОК на сварку (рис. 2.10); код можно не указывать.
+OPERATIONS: tuple[Operation, ...] = (
+    Operation("05", "88, Сборка", "ГОСТ 5264-80; ИОТ № 1", _assembly),
+    Operation("10", "90, Сварка", "ГОСТ 5264-80; ИОТ № 1", _welding),
+    Operation("15", "02, Контроль (визуально-измерительный)", "ГОСТ 3242-79; ИОТ № 1", _control),
+)
 
 
 def cards() -> list[OperationalCard]:
