@@ -143,15 +143,22 @@ class TestChains(unittest.TestCase):
 
     def test_checks_report_both_methods(self):
         checks = {check["цепь"]: check for check in dc.checks()}
-        self.assertEqual(checks["В"]["итог_вероятностный"], "проходит")
-        self.assertEqual(checks["В"]["итог_максимум_минимум"], "не проходит")
-        self.assertEqual(checks["Г"]["итог_максимум_минимум"], "проходит")
+        self.assertEqual(checks["M"]["итог_вероятностный"], "проходит")
+        self.assertEqual(checks["M"]["итог_максимум_минимум"], "не проходит")
+        self.assertEqual(checks["M′"]["итог_максимум_минимум"], "проходит")
 
     def test_without_clamping_to_the_bases_the_chain_does_not_close(self):
         check = dc.checks()[-1]
         self.assertIn("без прижима", check["цепь"])
         self.assertEqual(check["итог_максимум_минимум"], "не проходит")
         self.assertEqual(check["итог_вероятностный"], "не проходит")
+
+    def test_chain_result_is_the_max_min_sum_of_its_links(self):
+        """Замыкающее звено проектной цепи — сумма составляющих, а не копия исходного."""
+        for chain in (dc.chain_length(), dc.chain_height(), dc.chain_fixture_width()):
+            tolerances = [link.tolerance for link in chain.links]
+            self.assertEqual(chain.result.tolerance, dc.max_min_field(tolerances),
+                             chain.code)
 
 
 class TestFixtureTolerance(unittest.TestCase):
@@ -191,9 +198,15 @@ class TestCoordinates(unittest.TestCase):
             self.assertEqual(self.plane(number, "Z"), 0.0)
 
     def test_supports_match_the_basing_scheme_points(self):
-        """Координаты — те же, что на схеме базирования (этап 1): один источник."""
-        scheme = evaluate_constants(SRC / "basing_scheme.py", self.cad_names)
-        points = scheme["POINTS"]
+        """Координаты — те же, что на схеме базирования (этап 1): один источник.
+
+        Проверка включается, когда в дереве есть src/basing_scheme.py: до этого
+        этап 1 ещё не сдан, и сверять не с чем.
+        """
+        scheme_path = SRC / "basing_scheme.py"
+        if not scheme_path.exists():
+            self.skipTest("src/basing_scheme.py ещё нет (этап 1 не сдан)")
+        points = evaluate_constants(scheme_path, self.cad_names)["POINTS"]
         for number in ("1", "2", "3"):
             self.assertEqual((self.plane(number, "X"), self.plane(number, "Y"), 0.0),
                              tuple(points[int(number)]), number)
@@ -316,6 +329,15 @@ class TestArtifact(unittest.TestCase):
                          "Координаты опор, упоров и зажимов", "Сверка с теорией",
                          "совпадают с опорными точками 1–6"):
             self.assertIn(fragment, text, fragment)
+
+    def test_stage_readme_numbers_match_the_generated_document(self):
+        """Числа в рукописном README этапа должны подтверждаться расчётом."""
+        readme = (dc.OUT_DIR / "README.md").read_text(encoding="utf-8")
+        document = dc.render_markdown(dc.report())
+        for fragment in ("124 +0,2", "90 −0,2", "135 ±0,2", "45 ±0,2",
+                         "0,42", "0,08", "5,5 ±0,15", "2,5"):
+            self.assertIn(fragment, readme, f"README: {fragment}")
+            self.assertIn(fragment, document, f"пересчитанный документ: {fragment}")
 
     def test_reference_sizes_are_not_normed_in_the_document(self):
         text = dc.render_markdown(dc.report())
